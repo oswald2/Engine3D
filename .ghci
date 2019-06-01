@@ -1,0 +1,4 @@
+--command="stack repl --flag fltkhs:bundled"
+:set -fobject-code
+:set -lfltkc-dyn
+:m + Control.Concurrent
