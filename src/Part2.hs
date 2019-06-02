@@ -23,6 +23,8 @@ import           Data.Thyme.Time         hiding ( Vector )
 import           Control.Lens
 
 
+
+
 data Vec = Vec {
   _vx :: !Double
   , _vy :: !Double
@@ -37,7 +39,16 @@ data Triangle = Triangle {
   }
 makeLenses '' Triangle
 
-data ScreenTriangle = ScreenTriangle Position Position Position
+data ScreenTriangle = ScreenTriangle {
+    stv0 :: Position
+    , stv1 :: Position 
+    , stv2 :: Position 
+    , stvColor :: Color
+    }
+
+data Mesh = Mesh {
+  mesh :: Vector Triangle
+}
 
 
 crossP :: Vec -> Vec -> Vec
@@ -141,9 +152,9 @@ drawScene matProj ref widget = do
         triTranslated :: Triangle -> Triangle
         triTranslated tri =
             triRotatedXZ tri
-                & over (vec0 . vz) (+ 3.0)
-                & over (vec1 . vz) (+ 3.0)
-                & over (vec2 . vz) (+ 3.0)
+                & over (vec0 . vz) (+ 8.0)
+                & over (vec1 . vz) (+ 8.0)
+                & over (vec2 . vz) (+ 8.0)
 
         triCulled :: Triangle -> Vec -> Bool
         triCulled tri n = dotP n (tri ^. vec0 - camera) < 0
@@ -206,11 +217,12 @@ drawScene matProj ref widget = do
                     (vecToPosition v0)
                     (vecToPosition v1)
                     (vecToPosition v2)
+                    blackColor -- will be filled in later
                 vecToPosition (Vec x y _z) =
                         Position (X (Prelude.round x)) (Y (Prelude.round y))
             in  triangle
 
-    V.forM_ (mesh cubeMesh) $ \tri -> do
+    V.forM_ (mesh (scMesh scState)) $ \tri -> do
         let transTri = triTranslated tri
             n        = normal transTri
             doDraw   = triCulled transTri n
@@ -224,23 +236,45 @@ drawScene matProj ref widget = do
         if doDraw
             then do
                 color <- rgbColorWithRgb rgb
-                drawTriangle (triDraw transTri) color
+                let dt = (triDraw transTri) { stvColor = color }
+                drawTriangle dt
             else pure ()
 
     flcPopClip
 
 
-drawTriangle :: ScreenTriangle -> Color -> IO ()
-drawTriangle (ScreenTriangle v0 v1 v2) color = do
+drawTriangle :: ScreenTriangle -> IO ()
+drawTriangle (ScreenTriangle v0 v1 v2 color) = do
     flcSetColor color
     flcPolygon v0 v1 v2
     flcSetColor blackColor
     flcLoop v0 v1 v2
 
 
-data Mesh = Mesh {
-  mesh :: Vector Triangle
-}
+
+loadMesh :: FilePath -> IO Mesh
+loadMesh file = do
+    content <- readFile file
+    let ls = lines content
+        !vertexVec = V.fromList (vertices ls)
+        vertices [] = []
+        vertices (line : rest) =
+            case words line of 
+                "v" : x : y : z : _ -> Vec (read x) (read y) (read z) : vertices rest
+                _ -> vertices rest
+        triangleVec = V.fromList (faces ls)
+        faces [] = []
+        faces (line : rest) = 
+            case words line of
+                "f" : f0 : f1 : f2 : _ -> 
+                    let v0 = vertexVec V.! ((read f0) - 1)
+                        v1 = vertexVec V.! ((read f1) - 1)
+                        v2 = vertexVec V.! ((read f2) - 1)
+                    in
+                    Triangle v0 v1 v2 : faces rest
+                _ -> faces rest
+    return (Mesh triangleVec)
+
 
 
 type Matrix = Array (Int, Int) Double
@@ -310,27 +344,27 @@ multMatrixVec !mat !i =
 
 
 
-cubeMesh :: Mesh
-cubeMesh = Mesh $ V.fromList
-    [ Triangle (Vec 0.0 0.0 0.0) (Vec 0.0 1.0 0.0) (Vec 1.0 1.0 0.0)
-    , Triangle (Vec 0.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 0.0 0.0)
+-- cubeMesh :: Mesh
+-- cubeMesh = Mesh $ V.fromList
+--     [ Triangle (Vec 0.0 0.0 0.0) (Vec 0.0 1.0 0.0) (Vec 1.0 1.0 0.0)
+--     , Triangle (Vec 0.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 0.0 0.0)
 
-        -- EAST                                                      
-    , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 1.0 1.0)
-    , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 1.0) (Vec 1.0 0.0 1.0)
+--         -- EAST                                                      
+--     , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 1.0 1.0)
+--     , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 1.0) (Vec 1.0 0.0 1.0)
 
-        -- NORTH                                                 
-    , Triangle (Vec 1.0 0.0 1.0) (Vec 1.0 1.0 1.0) (Vec 0.0 1.0 1.0)
-    , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 0.0 1.0)
+--         -- NORTH                                                 
+--     , Triangle (Vec 1.0 0.0 1.0) (Vec 1.0 1.0 1.0) (Vec 0.0 1.0 1.0)
+--     , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 0.0 1.0)
 
-        -- WEST                                                      
-    , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 1.0 0.0)
-    , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 0.0) (Vec 0.0 0.0 0.0)
-    , Triangle (Vec 0.0 1.0 0.0) (Vec 0.0 1.0 1.0) (Vec 1.0 1.0 1.0)
-    , Triangle (Vec 0.0 1.0 0.0) (Vec 1.0 1.0 1.0) (Vec 1.0 1.0 0.0)
-    , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 0.0 1.0) (Vec 0.0 0.0 0.0)
-    , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 0.0 0.0) (Vec 1.0 0.0 0.0)
-    ]
+--         -- WEST                                                      
+--     , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 1.0 0.0)
+--     , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 0.0) (Vec 0.0 0.0 0.0)
+--     , Triangle (Vec 0.0 1.0 0.0) (Vec 0.0 1.0 1.0) (Vec 1.0 1.0 1.0)
+--     , Triangle (Vec 0.0 1.0 0.0) (Vec 1.0 1.0 1.0) (Vec 1.0 1.0 0.0)
+--     , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 0.0 1.0) (Vec 0.0 0.0 0.0)
+--     , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 0.0 0.0) (Vec 1.0 0.0 0.0)
+--     ]
 
 
 
@@ -338,6 +372,7 @@ data SceneState = SceneState {
     scWidth :: Width
     , scHeight :: Height
     , scTheta :: Double
+    , scMesh :: Mesh
     }
 
 
@@ -346,6 +381,9 @@ type SceneStateRef = IORef SceneState
 
 main :: IO ()
 main = do
+
+    mesh <- loadMesh "VideoShip.obj"
+
     let fNear  = 0.1
         fFar   = 1000.0
         fFov   = 90.0
@@ -375,7 +413,7 @@ main = do
             , ((3, 1), 0.0)
             ]
 
-    ref     <- newIORef (SceneState (Width width) (Height height) 0.0)
+    ref     <- newIORef (SceneState (Width width) (Height height) 0.0 mesh)
 
     window' <- doubleWindowNew (Size (Width width) (Height height))
                                Nothing
