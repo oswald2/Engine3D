@@ -41,38 +41,34 @@ data ScreenTriangle = ScreenTriangle Position Position Position
 
 
 crossP :: Vec -> Vec -> Vec
-crossP (Vec x1 y1 z1) (Vec x2 y2 z2) = 
-    Vec (y1 * z2 - z1 * y2)
-        (z1 * x2 - x1 * z2)
-        (x1 * y2 - y1 * x2)
+crossP (Vec x1 y1 z1) (Vec x2 y2 z2) =
+    Vec (y1 * z2 - z1 * y2) (z1 * x2 - x1 * z2) (x1 * y2 - y1 * x2)
 
 dotP :: Vec -> Vec -> Double
 dotP (Vec x1 y1 z1) (Vec x2 y2 z2) = x1 * x2 + y1 * y2 + z1 * z2
 
 magnitude :: Vec -> Double
-magnitude (Vec x y z) = sqrt(x * x + y * y + z * z)
+magnitude (Vec x y z) = sqrt (x * x + y * y + z * z)
 
 normalize :: Vec -> Vec
-normalize v@(Vec x y z) = 
-    let mag = magnitude v in
-    Vec (x / mag) (y / mag) (z / mag)
+normalize v@(Vec x y z) =
+    let mag = magnitude v in Vec (x / mag) (y / mag) (z / mag)
 
 instance Num Vec where
     Vec x1 y1 z1 + Vec x2 y2 z2 = Vec (x1 + x2) (y1 + y2) (z1 + z2)
     Vec x1 y1 z1 * Vec x2 y2 z2 = Vec (x1 * x2) (y1 * y2) (z1 * z2)
     Vec x1 y1 z1 - Vec x2 y2 z2 = Vec (x1 - x2) (y1 - y2) (z1 - z2)
 
-    abs (Vec x y z) = Vec (abs x) (abs y) (abs z) 
+    abs (Vec x y z) = Vec (abs x) (abs y) (abs z)
     signum (Vec x y z) = if (x == 0) && (y == 0) && (z == 0) then 0 else 1
 
     fromInteger x = Vec (fromIntegral x) 0 0
 
-normal :: Triangle -> Vec 
-normal tri = 
-    let line1 = tri ^. vec1 - tri ^. vec0 
+normal :: Triangle -> Vec
+normal tri =
+    let line1 = tri ^. vec1 - tri ^. vec0
         line2 = tri ^. vec2 - tri ^. vec0
-    in
-    normalize (crossP line1 line2)
+    in  normalize (crossP line1 line2)
 
 
 
@@ -145,13 +141,12 @@ drawScene matProj ref widget = do
         triTranslated :: Triangle -> Triangle
         triTranslated tri =
             triRotatedXZ tri
-                & over (vec0 . vz) (+ 8.0)
-                & over (vec1 . vz) (+ 8.0)
-                & over (vec2 . vz) (+ 8.0)
-        
-        triCulled :: Triangle -> Bool
-        triCulled tri = 
-            dotP (normal tri) (tri ^. vec0 - camera) < 0 
+                & over (vec0 . vz) (+ 3.0)
+                & over (vec1 . vz) (+ 3.0)
+                & over (vec2 . vz) (+ 3.0)
+
+        triCulled :: Triangle -> Vec -> Bool
+        triCulled tri n = dotP n (tri ^. vec0 - camera) < 0
 
         triProjected :: Triangle -> Triangle
         triProjected tri =
@@ -216,18 +211,30 @@ drawScene matProj ref widget = do
             in  triangle
 
     V.forM_ (mesh cubeMesh) $ \tri -> do
-        let transTri = triTranslated tri 
-            doDraw = triCulled transTri
-        if doDraw 
-            then drawTriangle (triDraw transTri) whiteColor
+        let transTri = triTranslated tri
+            n        = normal transTri
+            doDraw   = triCulled transTri n
+            lightDir = normalize light
+            lum      = dotP n lightDir
+            rgb =
+                ( Prelude.round (lum * 255)
+                , Prelude.round (lum * 255)
+                , Prelude.round (lum * 255)
+                )
+        if doDraw
+            then do
+                color <- rgbColorWithRgb rgb
+                drawTriangle (triDraw transTri) color
             else pure ()
-    
+
     flcPopClip
 
 
 drawTriangle :: ScreenTriangle -> Color -> IO ()
 drawTriangle (ScreenTriangle v0 v1 v2) color = do
     flcSetColor color
+    flcPolygon v0 v1 v2
+    flcSetColor blackColor
     flcLoop v0 v1 v2
 
 
@@ -241,59 +248,65 @@ type Matrix = Array (Int, Int) Double
 camera :: Vec
 camera = Vec 0 0 0
 
+light :: Vec
+light = Vec 0 0 (-1)
+
+
+
 multMatrixVec :: Matrix -> Vec -> Vec
 multMatrixVec !mat !i =
-    let
-        !ox =
-            i ^. vx
-                * mat
-                ! (0, 0)
-                + i ^. vy
-                * mat
-                ! (1, 0)
-                + i ^. vz 
-                * mat
-                ! (2, 0)
-                + mat
-                ! (3, 0)
+    let !ox =
+                i
+                    ^. vx
+                    *  mat
+                    !  (0, 0)
+                    +  i
+                    ^. vy
+                    *  mat
+                    !  (1, 0)
+                    +  i
+                    ^. vz
+                    *  mat
+                    !  (2, 0)
+                    +  mat
+                    !  (3, 0)
         !oy =
-            _vx i
-                * mat
-                ! (0, 1)
-                + _vy i
-                * mat
-                ! (1, 1)
-                + _vz i
-                * mat
-                ! (2, 1)
-                + mat
-                ! (3, 1)
+                _vx i
+                    * mat
+                    ! (0, 1)
+                    + _vy i
+                    * mat
+                    ! (1, 1)
+                    + _vz i
+                    * mat
+                    ! (2, 1)
+                    + mat
+                    ! (3, 1)
         !oz =
-            _vx i
-                * mat
-                ! (0, 2)
-                + _vy i
-                * mat
-                ! (1, 2)
-                + _vz i
-                * mat
-                ! (2, 2)
-                + mat
-                ! (3, 2)
+                _vx i
+                    * mat
+                    ! (0, 2)
+                    + _vy i
+                    * mat
+                    ! (1, 2)
+                    + _vz i
+                    * mat
+                    ! (2, 2)
+                    + mat
+                    ! (3, 2)
         !w =
-            _vx i
-                * mat
-                ! (0, 3)
-                + _vy i
-                * mat
-                ! (1, 3)
-                + _vz i
-                * mat
-                ! (2, 3)
-                + mat
-                ! (3, 3)
-    in
-        if w /= 0.0 then Vec (ox / w) (oy / w) (oz / w) else Vec ox oy oz
+                _vx i
+                    * mat
+                    ! (0, 3)
+                    + _vy i
+                    * mat
+                    ! (1, 3)
+                    + _vz i
+                    * mat
+                    ! (2, 3)
+                    + mat
+                    ! (3, 3)
+    in  if w /= 0.0 then Vec (ox / w) (oy / w) (oz / w) else Vec ox oy oz
 
 
 
@@ -377,24 +390,20 @@ main = do
     showWidget window'
 
     doUntil (eventLoopEnds window' widget')
-    where
-        eventLoopEnds :: Ref DoubleWindow -> Ref Widget -> IO Bool
-        eventLoopEnds window' widget' =  do
-            let update = do
-                    redraw widget'
-                continue todo = 
-                    if (todo == 0) then return True
-                     else do
-                        update
-                        return False
-            isVisible <- getVisible (window')
-            if isVisible
-                then FL.check >>= continue
-                else FL.wait >>= continue
+  where
+    eventLoopEnds :: Ref DoubleWindow -> Ref Widget -> IO Bool
+    eventLoopEnds window' widget' = do
+        let update = do
+                redraw widget'
+            continue todo = if (todo == 0)
+                then return True
+                else do
+                    update
+                    return False
+        isVisible <- getVisible (window')
+        if isVisible then FL.check >>= continue else FL.wait >>= continue
 
-        doUntil action = do
-            shouldStop <- action
-            if shouldStop
-                then return ()
-                else doUntil action
-    
+    doUntil action = do
+        shouldStop <- action
+        if shouldStop then return () else doUntil action
+
