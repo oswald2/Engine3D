@@ -28,8 +28,8 @@ Flag FastCompile
    Manual: True
    Default: False
 
-Executable Engine3D
-  Main-Is: Main.hs
+Executable Part1
+  Main-Is: Part1.hs
   Hs-Source-Dirs: src/
   Build-Depends:
     base == 4.*,
