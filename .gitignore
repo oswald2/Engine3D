@@ -21,3 +21,5 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 .vscode/ipch/4485e4eb8edcdcbc/mmap_address.bin
+.vscode/ipch/b032a7bf23c64d39/mmap_address.bin
+.vscode/ipch/b032a7bf23c64d39/OneLoneCoder_olcEngine3D_Part2.ipch

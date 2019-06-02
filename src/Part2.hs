@@ -27,7 +27,7 @@ data Vec = Vec {
   _vx :: !Double
   , _vy :: !Double
   , _vz :: !Double
-  }
+  } deriving (Eq, Ord)
 makeLenses ''Vec
 
 data Triangle = Triangle {
@@ -40,11 +40,47 @@ makeLenses '' Triangle
 data ScreenTriangle = ScreenTriangle Position Position Position
 
 
+crossP :: Vec -> Vec -> Vec
+crossP (Vec x1 y1 z1) (Vec x2 y2 z2) = 
+    Vec (y1 * z2 - z1 * y2)
+        (z1 * x2 - x1 * z2)
+        (x1 * y2 - y1 * x2)
+
+dotP :: Vec -> Vec -> Double
+dotP (Vec x1 y1 z1) (Vec x2 y2 z2) = x1 * x2 + y1 * y2 + z1 * z2
+
+magnitude :: Vec -> Double
+magnitude (Vec x y z) = sqrt(x * x + y * y + z * z)
+
+normalize :: Vec -> Vec
+normalize v@(Vec x y z) = 
+    let mag = magnitude v in
+    Vec (x / mag) (y / mag) (z / mag)
+
+instance Num Vec where
+    Vec x1 y1 z1 + Vec x2 y2 z2 = Vec (x1 + x2) (y1 + y2) (z1 + z2)
+    Vec x1 y1 z1 * Vec x2 y2 z2 = Vec (x1 * x2) (y1 * y2) (z1 * z2)
+    Vec x1 y1 z1 - Vec x2 y2 z2 = Vec (x1 - x2) (y1 - y2) (z1 - z2)
+
+    abs (Vec x y z) = Vec (abs x) (abs y) (abs z) 
+    signum (Vec x y z) = if (x == 0) && (y == 0) && (z == 0) then 0 else 1
+
+    fromInteger x = Vec (fromIntegral x) 0 0
+
+normal :: Triangle -> Vec 
+normal tri = 
+    let line1 = tri ^. vec1 - tri ^. vec0 
+        line2 = tri ^. vec2 - tri ^. vec0
+    in
+    normalize (crossP line1 line2)
+
+
+
 drawScene :: Matrix -> SceneStateRef -> Ref Widget -> IO ()
 drawScene matProj ref widget = do
     now <- getCurrentTime
     let fElapsedTime :: Double
-        !fElapsedTime = toSeconds (utctDayTime (unUTCTime now))
+        fElapsedTime = toSeconds (utctDayTime (unUTCTime now))
     scState    <- readIORef ref
     rectangle' <- getRectangle widget
     let coords@(x', y', w', h') = fromRectangle rectangle'
@@ -109,15 +145,22 @@ drawScene matProj ref widget = do
         triTranslated :: Triangle -> Triangle
         triTranslated tri =
             triRotatedXZ tri
-                & over (vec0 . vz) (+ 3.0)
-                & over (vec1 . vz) (+ 3.0)
-                & over (vec2 . vz) (+ 3.0)
+                & over (vec0 . vz) (+ 8.0)
+                & over (vec1 . vz) (+ 8.0)
+                & over (vec2 . vz) (+ 8.0)
+        
+        triCulled :: Triangle -> Bool
+        triCulled tri = 
+            dotP (normal tri) (tri ^. vec0 - camera) < 0 
+
+        triProjected :: Triangle -> Triangle
         triProjected tri =
-            triTranslated tri
+            tri
                 & over vec0 (multMatrixVec matProj)
                 & over vec1 (multMatrixVec matProj)
                 & over vec2 (multMatrixVec matProj)
 
+        triDraw :: Triangle -> ScreenTriangle
         triDraw tri =
             let triangle =
                         triProjected tri
@@ -172,7 +215,12 @@ drawScene matProj ref widget = do
                         Position (X (Prelude.round x)) (Y (Prelude.round y))
             in  triangle
 
-    V.forM_ (mesh cubeMesh) $ \tri -> drawTriangle (triDraw tri) whiteColor
+    V.forM_ (mesh cubeMesh) $ \tri -> do
+        let transTri = triTranslated tri 
+            doDraw = triCulled transTri
+        if doDraw 
+            then drawTriangle (triDraw transTri) whiteColor
+            else pure ()
     
     flcPopClip
 
@@ -180,7 +228,7 @@ drawScene matProj ref widget = do
 drawTriangle :: ScreenTriangle -> Color -> IO ()
 drawTriangle (ScreenTriangle v0 v1 v2) color = do
     flcSetColor color
-    flcPolygon v0 v1 v2
+    flcLoop v0 v1 v2
 
 
 data Mesh = Mesh {
@@ -190,7 +238,8 @@ data Mesh = Mesh {
 
 type Matrix = Array (Int, Int) Double
 
-
+camera :: Vec
+camera = Vec 0 0 0
 
 multMatrixVec :: Matrix -> Vec -> Vec
 multMatrixVec !mat !i =
