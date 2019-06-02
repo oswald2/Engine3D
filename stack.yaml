@@ -1,4 +1,8 @@
-flags: {}
+
+flags:
+  fltkhs: 
+    bundled: true
+
 resolver: lts-12.26
 extra-deps:
 - fltkhs-0.8.0.2
