@@ -12,7 +12,9 @@ To build execute:
 
 ```
 > git clone http://github.com/oswald2/Engine3D
-> stack install --flag fltkhs:bundled
-> stack exec Engine3D
+> stack build --flag fltkhs:bundled
+> stack exec Part1
+> stack exec Part2_Cube
+> stack exec Part2
 ```
 
