@@ -3,7 +3,7 @@ version : 0.0.0.1
 synopsis : A simple 3D engine, developed after https://youtu.be/ih20l3pJoeU
 description:
     This is a simple 3D engine coded from scratch after the video series from
-    javidx9 (https://www.youtube.com/channel/UC-yuWVUplUJZvieEligKBkA) 
+    javidx9 (https://www.youtube.com/channel/UC-yuWVUplUJZvieEligKBkA)
     taken from this (and following) videos: https://youtu.be/ih20l3pJoeU
 license : MIT
 license-file : LICENSE
@@ -86,6 +86,7 @@ Executable Part2
     fltkhs >= 0.8.0.2,
     text >= 1.2.2.0,
     vector,
+    vector-algorithms,
     array,
     thyme,
     lens

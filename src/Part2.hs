@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings 
+{-# LANGUAGE OverloadedStrings
   , BangPatterns
   , MultiWayIf
   , LambdaCase
@@ -15,10 +15,13 @@ import           Graphics.UI.FLTK.LowLevel.Fl_Enumerations
 
 import           Data.Vector                    ( Vector )
 import qualified Data.Vector                   as V
+import qualified Data.Vector.Algorithms.Merge  as VM
+import qualified Data.Vector.Generic.Mutable   as VM
 import           Data.Array
 import           Data.IORef
 import           Data.Thyme.Clock
 import           Data.Thyme.Time         hiding ( Vector )
+import           Data.Char                      ( chr )
 
 import           Control.Lens
 
@@ -41,8 +44,8 @@ makeLenses '' Triangle
 
 data ScreenTriangle = ScreenTriangle {
     stv0 :: Position
-    , stv1 :: Position 
-    , stv2 :: Position 
+    , stv1 :: Position
+    , stv2 :: Position
     , stvColor :: Color
     }
 
@@ -169,74 +172,85 @@ drawScene matProj ref widget = do
         triDraw :: Triangle -> ScreenTriangle
         triDraw tri =
             let triangle =
-                        triProjected tri
-                            &  vec0
-                            .  vx
-                            +~ 1.0
-                            &  vec0
-                            .  vy
-                            +~ 1.0
-                            &  vec1
-                            .  vx
-                            +~ 1.0
-                            &  vec1
-                            .  vy
-                            +~ 1.0
-                            &  vec2
-                            .  vx
-                            +~ 1.0
-                            &  vec2
-                            .  vy
-                            +~ 1.0
-                            &  vec0
-                            .  vx
-                            *~ 0.5
-                            *  fromIntegral w'
-                            &  vec0
-                            .  vy
-                            *~ 0.5
-                            *  fromIntegral h'
-                            &  vec1
-                            .  vx
-                            *~ 0.5
-                            *  fromIntegral w'
-                            &  vec1
-                            .  vy
-                            *~ 0.5
-                            *  fromIntegral h'
-                            &  vec2
-                            .  vx
-                            *~ 0.5
-                            *  fromIntegral w'
-                            &  vec2
-                            .  vy
-                            *~ 0.5
-                            *  fromIntegral h'
-                            &  triToScreen
+                    triProjected tri
+                        &  vec0
+                        .  vx
+                        +~ 1.0
+                        &  vec0
+                        .  vy
+                        +~ 1.0
+                        &  vec1
+                        .  vx
+                        +~ 1.0
+                        &  vec1
+                        .  vy
+                        +~ 1.0
+                        &  vec2
+                        .  vx
+                        +~ 1.0
+                        &  vec2
+                        .  vy
+                        +~ 1.0
+                        &  vec0
+                        .  vx
+                        *~ 0.5
+                        *  fromIntegral w'
+                        &  vec0
+                        .  vy
+                        *~ 0.5
+                        *  fromIntegral h'
+                        &  vec1
+                        .  vx
+                        *~ 0.5
+                        *  fromIntegral w'
+                        &  vec1
+                        .  vy
+                        *~ 0.5
+                        *  fromIntegral h'
+                        &  vec2
+                        .  vx
+                        *~ 0.5
+                        *  fromIntegral w'
+                        &  vec2
+                        .  vy
+                        *~ 0.5
+                        *  fromIntegral h'
+                        &  triToScreen
                 triToScreen (Triangle v0 v1 v2) = ScreenTriangle
                     (vecToPosition v0)
                     (vecToPosition v1)
                     (vecToPosition v2)
                     blackColor -- will be filled in later
                 vecToPosition (Vec x y _z) =
-                        Position (X (Prelude.round x)) (Y (Prelude.round y))
+                    Position (X (Prelude.round x)) (Y (Prelude.round y))
             in  triangle
 
-    V.forM_ (mesh (scMesh scState)) $ \tri -> do
-        let transTri = triTranslated tri
-            n        = normal transTri
-            doDraw   = triCulled transTri n
-            lightDir = normalize light
-            lum      = dotP n lightDir
-            rgb =
-                ( Prelude.round (lum * 255)
-                , Prelude.round (lum * 255)
-                , Prelude.round (lum * 255)
-                )
+    let vect :: Vector (Triangle, Color, Bool)
+        vect = V.map (\tri ->
+            let transTri = triTranslated tri
+                n        = normal transTri
+                doDraw   = triCulled transTri n
+                lightDir = normalize light
+                lum      = dotP n lightDir
+                color    = rgbColorWithGrayscale . chr . Prelude.round $ abs lum * 255
+            in
+            (transTri, color, doDraw)) (mesh (scMesh scState))
+
+        midpoints (t1, _, _) (t2, _, _)=
+            let z1 = t1 ^. vec0 . vz + t1 ^. vec1 . vz + t1 ^. vec2 . vz / 3.0
+                z2 = t2 ^. vec0 . vz + t2 ^. vec1 . vz + t2 ^. vec2 . vz / 3.0
+            in compare z2 z1
+
+    mv <- do
+        v' <- V.thaw vect
+        VM.sortBy midpoints v'
+        V.unsafeFreeze v'
+
+
+    V.forM_ mv $ \(tri, color, doDraw) ->
         if doDraw
             then do
-                color <- rgbColorWithRgb rgb
-                let dt = (triDraw transTri) { stvColor = color }
+                let dt = (triDraw tri) { stvColor = color }
                 drawTriangle dt
             else pure ()
 
@@ -247,32 +261,30 @@ drawTriangle :: ScreenTriangle -> IO ()
 drawTriangle (ScreenTriangle v0 v1 v2 color) = do
     flcSetColor color
     flcPolygon v0 v1 v2
-    flcSetColor blackColor
-    flcLoop v0 v1 v2
+    -- flcSetColor blackColor
+    -- flcLoop v0 v1 v2
 
 
 
 loadMesh :: FilePath -> IO Mesh
 loadMesh file = do
     content <- readFile file
-    let ls = lines content
+    let ls         = lines content
         !vertexVec = V.fromList (vertices ls)
-        vertices [] = []
-        vertices (line : rest) =
-            case words line of 
-                "v" : x : y : z : _ -> Vec (read x) (read y) (read z) : vertices rest
-                _ -> vertices rest
+        vertices []            = []
+        vertices (line : rest) = case words line of
+            "v" : x : y : z : _ ->
+                Vec (read x) (read y) (read z) : vertices rest
+            _ -> vertices rest
         triangleVec = V.fromList (faces ls)
-        faces [] = []
-        faces (line : rest) = 
-            case words line of
-                "f" : f0 : f1 : f2 : _ -> 
-                    let v0 = vertexVec V.! ((read f0) - 1)
-                        v1 = vertexVec V.! ((read f1) - 1)
-                        v2 = vertexVec V.! ((read f2) - 1)
-                    in
-                    Triangle v0 v1 v2 : faces rest
-                _ -> faces rest
+        faces []            = []
+        faces (line : rest) = case words line of
+            "f" : f0 : f1 : f2 : _ ->
+                let v0 = vertexVec V.! ((read f0) - 1)
+                    v1 = vertexVec V.! ((read f1) - 1)
+                    v2 = vertexVec V.! ((read f2) - 1)
+                in  Triangle v0 v1 v2 : faces rest
+            _ -> faces rest
     return (Mesh triangleVec)
 
 
@@ -290,56 +302,56 @@ light = Vec 0 0 (-1)
 multMatrixVec :: Matrix -> Vec -> Vec
 multMatrixVec !mat !i =
     let !ox =
-                i
-                    ^. vx
-                    *  mat
-                    !  (0, 0)
-                    +  i
-                    ^. vy
-                    *  mat
-                    !  (1, 0)
-                    +  i
-                    ^. vz
-                    *  mat
-                    !  (2, 0)
-                    +  mat
-                    !  (3, 0)
+            i
+                ^. vx
+                *  mat
+                !  (0, 0)
+                +  i
+                ^. vy
+                *  mat
+                !  (1, 0)
+                +  i
+                ^. vz
+                *  mat
+                !  (2, 0)
+                +  mat
+                !  (3, 0)
         !oy =
-                _vx i
-                    * mat
-                    ! (0, 1)
-                    + _vy i
-                    * mat
-                    ! (1, 1)
-                    + _vz i
-                    * mat
-                    ! (2, 1)
-                    + mat
-                    ! (3, 1)
+            _vx i
+                * mat
+                ! (0, 1)
+                + _vy i
+                * mat
+                ! (1, 1)
+                + _vz i
+                * mat
+                ! (2, 1)
+                + mat
+                ! (3, 1)
         !oz =
-                _vx i
-                    * mat
-                    ! (0, 2)
-                    + _vy i
-                    * mat
-                    ! (1, 2)
-                    + _vz i
-                    * mat
-                    ! (2, 2)
-                    + mat
-                    ! (3, 2)
+            _vx i
+                * mat
+                ! (0, 2)
+                + _vy i
+                * mat
+                ! (1, 2)
+                + _vz i
+                * mat
+                ! (2, 2)
+                + mat
+                ! (3, 2)
         !w =
-                _vx i
-                    * mat
-                    ! (0, 3)
-                    + _vy i
-                    * mat
-                    ! (1, 3)
-                    + _vz i
-                    * mat
-                    ! (2, 3)
-                    + mat
-                    ! (3, 3)
+            _vx i
+                * mat
+                ! (0, 3)
+                + _vy i
+                * mat
+                ! (1, 3)
+                + _vz i
+                * mat
+                ! (2, 3)
+                + mat
+                ! (3, 3)
     in  if w /= 0.0 then Vec (ox / w) (oy / w) (oz / w) else Vec ox oy oz
 
 
@@ -349,15 +361,15 @@ multMatrixVec !mat !i =
 --     [ Triangle (Vec 0.0 0.0 0.0) (Vec 0.0 1.0 0.0) (Vec 1.0 1.0 0.0)
 --     , Triangle (Vec 0.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 0.0 0.0)
 
---         -- EAST                                                      
+--         -- EAST
 --     , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 0.0) (Vec 1.0 1.0 1.0)
 --     , Triangle (Vec 1.0 0.0 0.0) (Vec 1.0 1.0 1.0) (Vec 1.0 0.0 1.0)
 
---         -- NORTH                                                 
+--         -- NORTH
 --     , Triangle (Vec 1.0 0.0 1.0) (Vec 1.0 1.0 1.0) (Vec 0.0 1.0 1.0)
 --     , Triangle (Vec 1.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 0.0 1.0)
 
---         -- WEST                                                      
+--         -- WEST
 --     , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 1.0) (Vec 0.0 1.0 0.0)
 --     , Triangle (Vec 0.0 0.0 1.0) (Vec 0.0 1.0 0.0) (Vec 0.0 0.0 0.0)
 --     , Triangle (Vec 0.0 1.0 0.0) (Vec 0.0 1.0 1.0) (Vec 1.0 1.0 1.0)
